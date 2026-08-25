@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { AI_MODELS } from "@/lib/ai/config";
-import type { GenerateResponse, ProductContext } from "@/lib/types";
+import type { GenerateResponse, Lesson, ProductContext } from "@/lib/types";
 
 const SYSTEM_INSTRUCTION = `You are a Product Title Agent for an e-commerce team.
 
@@ -14,8 +14,9 @@ Titles must:
 - Sound natural to customers.
 - Avoid unsupported claims, invented features, awkward keyword stuffing, and near-duplicates.
 
-There is currently no learned team memory. Do not claim or imply that preferences have already been learned.
 Generate exactly 5 meaningfully different title candidates. Return title text only in the requested structure, with no markdown or explanations.`;
+
+const NO_MEMORY_INSTRUCTION = "There is currently no learned team memory. Do not claim or imply that preferences have already been learned.";
 
 const titleSchema = {
   type: "object",
@@ -56,6 +57,27 @@ function formatProductContext(context: ProductContext) {
   ].join("\n");
 }
 
+function formatRelevantMemories(memories: Lesson[]) {
+  if (memories.length === 0) return "";
+  const lessons = memories.map((lesson, index) => `Lesson ${index + 1}
+
+Context: ${lesson.context}
+DO:
+${lesson.do.map((rule) => `- ${rule}`).join("\n")}
+DON'T:
+${lesson.dont.length > 0 ? lesson.dont.map((rule) => `- ${rule}`).join("\n") : "- None specified"}
+Reason: ${lesson.reason}
+Confidence: ${lesson.confidence}${lesson.goodExample ? `\nGood example (illustration only): ${lesson.goodExample}` : ""}${lesson.badExample ? `\nBad example (illustration only): ${lesson.badExample}` : ""}`);
+
+  return `RELEVANT TEAM LESSONS
+
+The team previously reviewed similar work and learned the following reusable lessons.
+Use these lessons as guidance when they apply. Higher-confidence lessons should carry more weight, but no lesson is an absolute rule. Never violate the current Product Context to follow a lesson.
+Do not blindly copy examples. Do not mention lessons or the memory system in the output. Do not copy example titles verbatim unless naturally appropriate. Preserve meaningful diversity across all five candidates.
+
+${lessons.join("\n\n")}`;
+}
+
 function isGenerateResponse(value: unknown): value is GenerateResponse {
   if (!value || typeof value !== "object" || !("titles" in value)) return false;
   const titles = (value as { titles: unknown }).titles;
@@ -66,13 +88,13 @@ function isGenerateResponse(value: unknown): value is GenerateResponse {
 
 export async function generateTitles(
   productContext: ProductContext,
-  // A future milestone can add relevantMemories as a second argument here.
+  relevantMemories: Lesson[] = [],
 ): Promise<GenerateResponse> {
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const response = await client.responses.create({
     model: AI_MODELS.generate,
-    instructions: SYSTEM_INSTRUCTION,
-    input: formatProductContext(productContext),
+    instructions: `${SYSTEM_INSTRUCTION}\n\n${relevantMemories.length === 0 ? NO_MEMORY_INSTRUCTION : "Apply only the relevant team lessons supplied with this request."}`,
+    input: [formatRelevantMemories(relevantMemories), formatProductContext(productContext)].filter(Boolean).join("\n\n"),
     text: {
       format: {
         type: "json_schema",
@@ -81,6 +103,15 @@ export async function generateTitles(
         schema: titleSchema,
       },
     },
+  });
+
+  console.log({
+    stage: "generate",
+    model: AI_MODELS.generate,
+    memoryCount: relevantMemories.length,
+    memoryIds: relevantMemories.map((memory) => memory.id),
+    inputTokens: response.usage?.input_tokens,
+    outputTokens: response.usage?.output_tokens,
   });
 
   if (!response.output_text) throw new Error("The AI returned an empty response.");

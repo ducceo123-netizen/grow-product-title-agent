@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { clearMemories, deleteMemory, getMemories, hasMemory, saveMemory } from "@/lib/memory/client";
-import type { ApiErrorResponse, GeneratedTitle, GenerateResponse, LearnResponse, Lesson, ProductContext, RetrieveResponse, ReviewAction } from "@/lib/types";
+import type { ApiErrorResponse, GeneratedTitle, GenerateResponse, GenerationMeta, LearnResponse, Lesson, ProductContext, RetrieveResponse, ReviewAction } from "@/lib/types";
 
 type ReviewState = ReviewAction | null;
 
@@ -45,7 +45,7 @@ function AppHeader({ memoryCount }: { memoryCount: number }) {
   );
 }
 
-function ProductForm({ context, onContextChange, onGenerate, onRetrieve, loading, retrievalStatus, memoryCount, error }: { context: ProductContext; onContextChange: (field: keyof ProductContext, value: string) => void; onGenerate: (context: ProductContext) => Promise<void>; onRetrieve: () => void; loading: boolean; retrievalStatus: RetrievalStatus; memoryCount: number; error: string | null }) {
+function ProductForm({ context, onContextChange, onGenerate, onRetrieve, loading, retrievalStatus, memoryCount, relevantMemoryCount, error }: { context: ProductContext; onContextChange: (field: keyof ProductContext, value: string) => void; onGenerate: (context: ProductContext) => Promise<void>; onRetrieve: () => void; loading: boolean; retrievalStatus: RetrievalStatus; memoryCount: number; relevantMemoryCount: number; error: string | null }) {
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     void onGenerate(context);
@@ -70,6 +70,7 @@ function ProductForm({ context, onContextChange, onGenerate, onRetrieve, loading
           <button className="button-secondary w-full disabled:cursor-not-allowed disabled:text-tertiary" disabled={retrievalStatus === "loading"} onClick={onRetrieve} type="button">{retrievalStatus === "loading" ? <><LoadingSpinner dark /> Finding memories...</> : "Find relevant memories"}</button>
           <p className="mt-2 text-center text-xs leading-5 text-secondary">Check Team Memory for lessons relevant to this product.</p>
         </div>}
+        {relevantMemoryCount > 0 && <div className="flex items-center justify-center gap-2 rounded-lg bg-pistachio/55 px-3 py-2.5 text-[13px] font-medium"><span className="h-2 w-2 rounded-full bg-black" />Using {relevantMemoryCount} relevant {relevantMemoryCount === 1 ? "memory" : "memories"}</div>}
         <button className="button-primary mt-2 w-full disabled:cursor-not-allowed disabled:bg-zinc-500" disabled={loading} type="submit">
           {loading ? <><LoadingSpinner /> Generating...</> : <><Sparkle /> Generate titles</>}
         </button>
@@ -179,12 +180,12 @@ function TitleCard({ title, index, productContext, memories, onSave }: { title: 
   );
 }
 
-function TitleList({ titles, productContext, memories, onSave }: { titles: GeneratedTitle[]; productContext: ProductContext | null; memories: Lesson[]; onSave: (lesson: Lesson) => void }) {
+function TitleList({ titles, productContext, memories, onSave, generationMeta }: { titles: GeneratedTitle[]; productContext: ProductContext | null; memories: Lesson[]; onSave: (lesson: Lesson) => void; generationMeta: GenerationMeta }) {
   return (
     <section className="workspace-panel border-hairline py-8 md:border-l md:pl-8 lg:border-r lg:px-8 lg:py-0">
       <div className="flex items-center justify-between gap-4">
         <h2 className="section-title">Generated titles</h2>
-        <span className="rounded-full bg-zinc-100 px-3 py-1.5 text-xs font-medium text-secondary">AI Generated</span>
+        <span className={generationMeta.usedMemory ? "rounded-full bg-aloe px-3 py-1.5 text-xs font-medium" : "rounded-full bg-zinc-100 px-3 py-1.5 text-xs font-medium text-secondary"}>{generationMeta.usedMemory ? "Memory Guided" : "AI Generated"}</span>
       </div>
       {titles.length === 0 ? (
         <div className="flex min-h-64 items-center justify-center border-b border-t border-hairline py-12 text-center md:min-h-[430px]">
@@ -254,6 +255,7 @@ export default function Home() {
   const [retrievalStatus, setRetrievalStatus] = useState<RetrievalStatus>("idle");
   const [relevantMemories, setRelevantMemories] = useState<ResolvedMemoryMatch[]>([]);
   const [retrievalError, setRetrievalError] = useState<string | null>(null);
+  const [generationMeta, setGenerationMeta] = useState<GenerationMeta>({ usedMemory: false, memoryIds: [] });
 
   useEffect(() => {
     setMemories(getMemories());
@@ -320,11 +322,12 @@ export default function Home() {
     }
 
     setLoading(true);
+    const memoriesForGeneration = relevantMemories.map((match) => match.lesson);
     try {
       const response = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(context),
+        body: JSON.stringify({ productContext: context, relevantMemories: memoriesForGeneration }),
       });
       const result = (await response.json()) as GenerateResponse | ApiErrorResponse;
       if (!response.ok || "error" in result) {
@@ -335,6 +338,7 @@ export default function Home() {
       }
       setTitles(result.titles);
       setGeneratedContext(context);
+      setGenerationMeta({ usedMemory: memoriesForGeneration.length > 0, memoryIds: memoriesForGeneration.map((memory) => memory.id) });
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Network error. Please try again.");
     } finally {
@@ -350,7 +354,7 @@ export default function Home() {
         <p className="mt-4 max-w-lg text-[15px] leading-6 text-secondary">Generate product titles, review the results,<br className="hidden sm:block" /> and teach the agent what your team prefers.</p>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-[minmax(240px,0.75fr)_minmax(0,1.5fr)] lg:grid-cols-[minmax(230px,0.85fr)_minmax(440px,1.45fr)_minmax(220px,0.75fr)]">
-        <ProductForm context={productContext} error={error} loading={loading} memoryCount={memories.length} onContextChange={changeProductContext} onGenerate={generate} onRetrieve={retrieveMemories} retrievalStatus={retrievalStatus} /><TitleList memories={memories} onSave={saveLesson} productContext={generatedContext} titles={titles} /><MemoryPanel memories={memories} onClear={removeAllLessons} onDelete={removeLesson} relevantMemories={relevantMemories} retrievalError={retrievalError} retrievalStatus={retrievalStatus} />
+        <ProductForm context={productContext} error={error} loading={loading} memoryCount={memories.length} onContextChange={changeProductContext} onGenerate={generate} onRetrieve={retrieveMemories} relevantMemoryCount={relevantMemories.length} retrievalStatus={retrievalStatus} /><TitleList generationMeta={generationMeta} memories={memories} onSave={saveLesson} productContext={generatedContext} titles={titles} /><MemoryPanel memories={memories} onClear={removeAllLessons} onDelete={removeLesson} relevantMemories={relevantMemories} retrievalError={retrievalError} retrievalStatus={retrievalStatus} />
       </div>
     </main></>
   );

@@ -16,6 +16,16 @@ export type GenerateResponse = {
   titles: GeneratedTitle[];
 };
 
+export type GenerateRequest = {
+  productContext: ProductContext;
+  relevantMemories?: Lesson[];
+};
+
+export type GenerationMeta = {
+  usedMemory: boolean;
+  memoryIds: string[];
+};
+
 export type ApiErrorResponse = {
   error: string;
 };

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { generateTitles } from "@/lib/openai/generate-titles";
+import { isLesson } from "@/lib/memory/validation";
 import type { ApiErrorResponse, GenerateResponse, ProductContext } from "@/lib/types";
 
 function optionalString(value: unknown) {
@@ -19,7 +20,11 @@ export async function POST(request: Request): Promise<NextResponse<GenerateRespo
   }
 
   const input = body as Record<string, unknown>;
-  const productDescription = optionalString(input.productDescription);
+  if (!input.productContext || typeof input.productContext !== "object") {
+    return NextResponse.json({ error: "Valid product context is required." }, { status: 400 });
+  }
+  const contextInput = input.productContext as Record<string, unknown>;
+  const productDescription = optionalString(contextInput.productDescription);
   if (!productDescription) {
     return NextResponse.json({ error: "Product description is required." }, { status: 400 });
   }
@@ -31,17 +36,26 @@ export async function POST(request: Request): Promise<NextResponse<GenerateRespo
     );
   }
 
+  const relevantMemories = input.relevantMemories ?? [];
+  if (!Array.isArray(relevantMemories) || !relevantMemories.every(isLesson)) {
+    return NextResponse.json({ error: "Relevant memories must be a valid lesson array." }, { status: 400 });
+  }
+  const memoryIds = new Set(relevantMemories.map((memory) => memory.id));
+  if (memoryIds.size !== relevantMemories.length) {
+    return NextResponse.json({ error: "Relevant memory IDs must be unique." }, { status: 400 });
+  }
+
   const context: ProductContext = {
     productDescription,
-    productLine: optionalString(input.productLine),
-    productTheme: optionalString(input.productTheme),
-    recipient: optionalString(input.recipient),
-    occasion: optionalString(input.occasion),
-    niche: optionalString(input.niche),
+    productLine: optionalString(contextInput.productLine),
+    productTheme: optionalString(contextInput.productTheme),
+    recipient: optionalString(contextInput.recipient),
+    occasion: optionalString(contextInput.occasion),
+    niche: optionalString(contextInput.niche),
   };
 
   try {
-    return NextResponse.json(await generateTitles(context));
+    return NextResponse.json(await generateTitles(context, relevantMemories));
   } catch (error) {
     console.error("Title generation failed:", error instanceof Error ? error.message : "Unknown error");
     return NextResponse.json(
