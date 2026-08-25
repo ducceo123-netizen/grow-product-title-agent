@@ -45,7 +45,7 @@ function AppHeader({ memoryCount }: { memoryCount: number }) {
   );
 }
 
-function ProductForm({ context, onContextChange, onGenerate, loading, error }: { context: ProductContext; onContextChange: (field: keyof ProductContext, value: string) => void; onGenerate: (context: ProductContext) => Promise<void>; loading: boolean; error: string | null }) {
+function ProductForm({ context, onContextChange, onGenerate, onRetrieve, loading, retrievalStatus, memoryCount, error }: { context: ProductContext; onContextChange: (field: keyof ProductContext, value: string) => void; onGenerate: (context: ProductContext) => Promise<void>; onRetrieve: () => void; loading: boolean; retrievalStatus: RetrievalStatus; memoryCount: number; error: string | null }) {
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     void onGenerate(context);
@@ -66,6 +66,10 @@ function ProductForm({ context, onContextChange, onGenerate, loading, error }: {
             )}
           </label>
         ))}
+        {memoryCount > 0 && <div className="border-t border-hairline pt-4">
+          <button className="button-secondary w-full disabled:cursor-not-allowed disabled:text-tertiary" disabled={retrievalStatus === "loading"} onClick={onRetrieve} type="button">{retrievalStatus === "loading" ? <><LoadingSpinner dark /> Finding memories...</> : "Find relevant memories"}</button>
+          <p className="mt-2 text-center text-xs leading-5 text-secondary">Check Team Memory for lessons relevant to this product.</p>
+        </div>}
         <button className="button-primary mt-2 w-full disabled:cursor-not-allowed disabled:bg-zinc-500" disabled={loading} type="submit">
           {loading ? <><LoadingSpinner /> Generating...</> : <><Sparkle /> Generate titles</>}
         </button>
@@ -75,8 +79,8 @@ function ProductForm({ context, onContextChange, onGenerate, loading, error }: {
   );
 }
 
-function LoadingSpinner() {
-  return <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border border-white/40 border-t-white" />;
+function LoadingSpinner({ dark = false }: { dark?: boolean }) {
+  return <span aria-hidden="true" className={`h-4 w-4 animate-spin rounded-full border ${dark ? "border-zinc-300 border-t-black" : "border-white/40 border-t-white"}`} />;
 }
 
 function Sparkle() {
@@ -193,7 +197,7 @@ function TitleList({ titles, productContext, memories, onSave }: { titles: Gener
   );
 }
 
-function RelevantMemoriesPanel({ memories, status, matches, error, onRetrieve }: { memories: Lesson[]; status: RetrievalStatus; matches: ResolvedMemoryMatch[]; error: string | null; onRetrieve: () => void }) {
+function RelevantMemoriesPanel({ memories, status, matches, error }: { memories: Lesson[]; status: RetrievalStatus; matches: ResolvedMemoryMatch[]; error: string | null }) {
   return <section className="rounded-xl bg-pistachio/45 p-4" aria-labelledby="relevant-memories-heading">
     <div className="flex items-center justify-between gap-3">
       <h3 className="text-sm font-medium" id="relevant-memories-heading">Relevant memories</h3>
@@ -214,13 +218,12 @@ function RelevantMemoriesPanel({ memories, status, matches, error, onRetrieve }:
       </article>;
     })}</div>}
 
-    {memories.length > 0 && <button className="button-secondary mt-4 w-full disabled:cursor-not-allowed disabled:text-tertiary" disabled={status === "loading"} onClick={onRetrieve} type="button">{status === "loading" ? "Finding memories..." : "Find relevant memories"}</button>}
     {memories.length === 0 && <p className="mt-3 text-[12px] leading-5 text-secondary">Save a lesson to Team Memory before searching.</p>}
     {error && <p className="mt-2 text-[12px] leading-5 text-secondary" role="alert">{error}</p>}
   </section>;
 }
 
-function MemoryPanel({ memories, onDelete, onClear, retrievalStatus, relevantMemories, retrievalError, onRetrieve }: { memories: Lesson[]; onDelete: (id: string) => void; onClear: () => void; retrievalStatus: RetrievalStatus; relevantMemories: ResolvedMemoryMatch[]; retrievalError: string | null; onRetrieve: () => void }) {
+function MemoryPanel({ memories, onDelete, onClear, retrievalStatus, relevantMemories, retrievalError }: { memories: Lesson[]; onDelete: (id: string) => void; onClear: () => void; retrievalStatus: RetrievalStatus; relevantMemories: ResolvedMemoryMatch[]; retrievalError: string | null }) {
   const [confirmClear, setConfirmClear] = useState(false);
   return (
     <aside className="workspace-panel border-t border-hairline pt-8 md:col-span-2 lg:col-span-1 lg:border-t-0 lg:pl-8 lg:pt-0">
@@ -236,7 +239,7 @@ function MemoryPanel({ memories, onDelete, onClear, retrievalStatus, relevantMem
         </article>)}
         {!confirmClear ? <button className="min-h-11 text-xs font-medium text-secondary underline decoration-hairline underline-offset-4 hover:text-black" onClick={() => setConfirmClear(true)} type="button">Clear memory</button> : <div className="rounded-lg border border-hairline p-3 text-[13px]"><p>Clear all Team Memory?</p><div className="mt-3 flex gap-2"><button className="button-primary button-small" onClick={() => { onClear(); setConfirmClear(false); }} type="button">Clear all</button><button className="button-ghost button-small" onClick={() => setConfirmClear(false)} type="button">Cancel</button></div></div>}
       </div>}
-      <RelevantMemoriesPanel error={retrievalError} matches={relevantMemories} memories={memories} onRetrieve={onRetrieve} status={retrievalStatus} />
+      <RelevantMemoriesPanel error={retrievalError} matches={relevantMemories} memories={memories} status={retrievalStatus} />
     </aside>
   );
 }
@@ -347,7 +350,7 @@ export default function Home() {
         <p className="mt-4 max-w-lg text-[15px] leading-6 text-secondary">Generate product titles, review the results,<br className="hidden sm:block" /> and teach the agent what your team prefers.</p>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-[minmax(240px,0.75fr)_minmax(0,1.5fr)] lg:grid-cols-[minmax(230px,0.85fr)_minmax(440px,1.45fr)_minmax(220px,0.75fr)]">
-        <ProductForm context={productContext} error={error} loading={loading} onContextChange={changeProductContext} onGenerate={generate} /><TitleList memories={memories} onSave={saveLesson} productContext={generatedContext} titles={titles} /><MemoryPanel memories={memories} onClear={removeAllLessons} onDelete={removeLesson} onRetrieve={retrieveMemories} relevantMemories={relevantMemories} retrievalError={retrievalError} retrievalStatus={retrievalStatus} />
+        <ProductForm context={productContext} error={error} loading={loading} memoryCount={memories.length} onContextChange={changeProductContext} onGenerate={generate} onRetrieve={retrieveMemories} retrievalStatus={retrievalStatus} /><TitleList memories={memories} onSave={saveLesson} productContext={generatedContext} titles={titles} /><MemoryPanel memories={memories} onClear={removeAllLessons} onDelete={removeLesson} relevantMemories={relevantMemories} retrievalError={retrievalError} retrievalStatus={retrievalStatus} />
       </div>
     </main></>
   );
