@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+  html { background: #fbfbf5; }
+  body {
+    margin: 0;
+    background: #fbfbf5;
+    color: #000;
+    font-family: "Inter Variable", Inter, Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    font-weight: 420;
+    line-height: 1.5;
+    font-feature-settings: "ss03";
+  }
+  button, input, textarea { font: inherit; }
+  button { cursor: pointer; }
+}
+
+@layer components {
+  .workspace-panel { min-width: 0; }
+  .section-title { @apply text-base font-semibold tracking-[-0.01em]; }
+  .section-caption { @apply mt-2 max-w-xs text-sm leading-5 text-secondary; }
+  .field { @apply min-h-11 w-full rounded-lg border border-hairline bg-white px-3 py-2.5 text-[14px] leading-5 text-black outline-none transition placeholder:text-tertiary focus:border-black focus:ring-1 focus:ring-black; }
+  .button-primary { @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-black px-6 py-3 text-sm font-medium text-white transition hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2; }
+  .button-secondary { @apply inline-flex min-h-11 items-center justify-center rounded-full border border-black bg-white px-5 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2; }
+  .button-ghost { @apply inline-flex min-h-11 items-center justify-center rounded-full border border-hairline bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:border-zinc-400 hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2; }
+  .button-small { @apply min-h-11 px-4 py-2; }
+}
+
+@media (max-width: 767px) {
+  .workspace-panel + .workspace-panel { margin-top: 2rem; }
+}
