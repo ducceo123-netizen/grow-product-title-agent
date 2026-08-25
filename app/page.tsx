@@ -1,24 +1,17 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import type { ApiErrorResponse, GeneratedTitle, GenerateResponse, ProductContext } from "@/lib/types";
 
 type ReviewState = "approved" | "rejected" | null;
 
-const mockTitles = [
-  "Personalized Dog Memorial Ornament with Photo & Name",
-  "Custom Pet Memorial Christmas Ornament for Dog Lovers",
-  "Forever in My Heart Personalized Dog Photo Ornament",
-  "In Loving Memory Custom Dog Keepsake Christmas Ornament",
-  "Personalized Rainbow Bridge Dog Memorial Ornament",
-];
-
 const fields = [
-  ["Product Description", "Personalized memorial ornament featuring a customer's dog photo and name."],
-  ["Product Line", "Ornament"],
-  ["Product Theme", "Memorial"],
-  ["Recipient", "Pet Owner"],
-  ["Occasion", "Christmas"],
-  ["Niche / Interest", "Dog Lovers"],
+  ["Product Description", "productDescription", "Personalized memorial ornament featuring a customer's dog photo and name."],
+  ["Product Line", "productLine", "Ornament"],
+  ["Product Theme", "productTheme", "Memorial"],
+  ["Recipient", "recipient", "Pet Owner"],
+  ["Occasion", "occasion", "Christmas"],
+  ["Niche / Interest", "niche", "Dog Lovers"],
 ];
 
 function AppHeader() {
@@ -35,28 +28,46 @@ function AppHeader() {
   );
 }
 
-function ProductForm({ onGenerate }: { onGenerate: () => void }) {
+function ProductForm({ onGenerate, loading, error }: { onGenerate: (context: ProductContext) => Promise<void>; loading: boolean; error: string | null }) {
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    void onGenerate({
+      productDescription: String(data.get("productDescription") || ""),
+      productLine: String(data.get("productLine") || ""),
+      productTheme: String(data.get("productTheme") || ""),
+      recipient: String(data.get("recipient") || ""),
+      occasion: String(data.get("occasion") || ""),
+      niche: String(data.get("niche") || ""),
+    });
+  };
+
   return (
     <section className="workspace-panel pb-8 lg:pr-8">
       <h2 className="section-title">Product context</h2>
       <p className="section-caption">Give the agent enough context to understand the product.</p>
-      <form className="mt-6 space-y-4" onSubmit={(event) => { event.preventDefault(); onGenerate(); }}>
-        {fields.map(([label, value], index) => (
+      <form className="mt-6 space-y-4" onSubmit={submit}>
+        {fields.map(([label, name, value], index) => (
           <label className="block" key={label}>
             <span className="mb-2 block text-[13px] font-medium">{label}</span>
             {index === 0 ? (
-              <textarea className="field min-h-24 resize-y" defaultValue={value} />
+              <textarea className="field min-h-24 resize-y" defaultValue={value} name={name} />
             ) : (
-              <input className="field" defaultValue={value} />
+              <input className="field" defaultValue={value} name={name} />
             )}
           </label>
         ))}
-        <button className="button-primary mt-2 w-full" type="submit">
-          <Sparkle /> Generate titles
+        <button className="button-primary mt-2 w-full disabled:cursor-not-allowed disabled:bg-zinc-500" disabled={loading} type="submit">
+          {loading ? <><LoadingSpinner /> Generating...</> : <><Sparkle /> Generate titles</>}
         </button>
+        {error && <p className="text-[13px] leading-5 text-secondary" role="alert">{error}</p>}
       </form>
     </section>
   );
+}
+
+function LoadingSpinner() {
+  return <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border border-white/40 border-t-white" />;
 }
 
 function Sparkle() {
@@ -112,19 +123,19 @@ function TitleCard({ title, index }: { title: string; index: number }) {
   );
 }
 
-function TitleList({ generated }: { generated: boolean }) {
+function TitleList({ titles }: { titles: GeneratedTitle[] }) {
   return (
     <section className="workspace-panel border-hairline py-8 md:border-l md:pl-8 lg:border-r lg:px-8 lg:py-0">
       <div className="flex items-center justify-between gap-4">
         <h2 className="section-title">Generated titles</h2>
         <span className="rounded-full bg-zinc-100 px-3 py-1.5 text-xs font-medium text-secondary">AI Generated</span>
       </div>
-      {!generated ? (
+      {titles.length === 0 ? (
         <div className="flex min-h-64 items-center justify-center border-b border-t border-hairline py-12 text-center md:min-h-[430px]">
           <div><p className="font-medium">Ready when you are.</p><p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-secondary">Add your product context and generate your first set of titles.</p></div>
         </div>
       ) : (
-        <div className="mt-6 space-y-3">{mockTitles.map((title, index) => <TitleCard index={index} key={title} title={title} />)}</div>
+        <div className="mt-6 space-y-3">{titles.map((title, index) => <TitleCard index={index} key={title.id} title={title.text} />)}</div>
       )}
     </section>
   );
@@ -142,7 +153,39 @@ function MemoryPanel() {
 }
 
 export default function Home() {
-  const [generated, setGenerated] = useState(false);
+  const [titles, setTitles] = useState<GeneratedTitle[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const generate = async (context: ProductContext) => {
+    setError(null);
+    if (!context.productDescription.trim()) {
+      setError("Product description is required.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(context),
+      });
+      const result = (await response.json()) as GenerateResponse | ApiErrorResponse;
+      if (!response.ok || "error" in result) {
+        throw new Error("error" in result ? result.error : "Title generation failed.");
+      }
+      if (!Array.isArray(result.titles) || result.titles.length !== 5) {
+        throw new Error("The server returned an invalid title response.");
+      }
+      setTitles(result.titles);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Network error. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <><AppHeader /><main className="mx-auto max-w-[1440px] px-5 pb-16 sm:px-8">
       <div className="pb-8 pt-10 sm:pt-12">
@@ -151,7 +194,7 @@ export default function Home() {
         <p className="mt-4 max-w-lg text-[15px] leading-6 text-secondary">Generate product titles, review the results,<br className="hidden sm:block" /> and teach the agent what your team prefers.</p>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-[minmax(240px,0.75fr)_minmax(0,1.5fr)] lg:grid-cols-[minmax(230px,0.85fr)_minmax(440px,1.45fr)_minmax(220px,0.75fr)]">
-        <ProductForm onGenerate={() => setGenerated(true)} /><TitleList generated={generated} /><MemoryPanel />
+        <ProductForm error={error} loading={loading} onGenerate={generate} /><TitleList titles={titles} /><MemoryPanel />
       </div>
     </main></>
   );
