@@ -20,10 +20,15 @@ export async function POST(request: Request): Promise<NextResponse<GenerateRespo
   }
 
   const input = body as Record<string, unknown>;
-  if (!input.productContext || typeof input.productContext !== "object") {
+  const hasNestedContext = input.productContext !== undefined;
+  if (hasNestedContext && (!input.productContext || typeof input.productContext !== "object" || Array.isArray(input.productContext))) {
     return NextResponse.json({ error: "Valid product context is required." }, { status: 400 });
   }
-  const contextInput = input.productContext as Record<string, unknown>;
+  // M6 uses a nested GenerateRequest. Accept the pre-M6 flat ProductContext as
+  // well so a cached production client cannot be rejected during deployment.
+  const contextInput = hasNestedContext
+    ? input.productContext as Record<string, unknown>
+    : input;
   const productDescription = optionalString(contextInput.productDescription);
   if (!productDescription) {
     return NextResponse.json({ error: "Product description is required." }, { status: 400 });
