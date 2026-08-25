@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { AI_MODELS } from "@/lib/ai/config";
 import type { GenerateResponse, ProductContext } from "@/lib/types";
 
 const SYSTEM_INSTRUCTION = `You are a Product Title Agent for an e-commerce team.
@@ -69,7 +70,7 @@ export async function generateTitles(
 ): Promise<GenerateResponse> {
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const response = await client.responses.create({
-    model: "gpt-4o-mini",
+    model: AI_MODELS.generate,
     instructions: SYSTEM_INSTRUCTION,
     input: formatProductContext(productContext),
     text: {
