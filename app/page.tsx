@@ -193,6 +193,33 @@ function TitleList({ titles, productContext, memories, onSave }: { titles: Gener
   );
 }
 
+function RelevantMemoriesPanel({ memories, status, matches, error, onRetrieve }: { memories: Lesson[]; status: RetrievalStatus; matches: ResolvedMemoryMatch[]; error: string | null; onRetrieve: () => void }) {
+  return <section className="rounded-xl bg-pistachio/45 p-4" aria-labelledby="relevant-memories-heading">
+    <div className="flex items-center justify-between gap-3">
+      <h3 className="text-sm font-medium" id="relevant-memories-heading">Relevant memories</h3>
+      {status === "success" && matches.length > 0 && <span className="rounded-full bg-aloe px-2.5 py-1 text-[11px] font-medium">{matches.length} found</span>}
+    </div>
+
+    {status === "idle" && <p className="mt-2 text-[13px] leading-5 text-secondary">No memories retrieved for this product yet.</p>}
+    {status === "loading" && <p className="mt-3 flex items-center gap-2 text-[13px] text-secondary"><span aria-hidden="true" className="h-3.5 w-3.5 animate-spin rounded-full border border-zinc-400 border-t-black" />Finding memories...</p>}
+    {status === "success" && matches.length === 0 && <div className="mt-2"><p className="text-[13px] font-medium">0 relevant memories</p><p className="mt-1 text-[13px] leading-5 text-secondary">No learned lessons appear useful for this product.</p></div>}
+
+    {matches.length > 0 && <div className="mt-4 space-y-3">{matches.map(({ lesson, relevance }) => {
+      const memoryNumber = memories.findIndex((memory) => memory.id === lesson.id) + 1;
+      return <article className="rounded-lg border border-aloe bg-white p-3" key={lesson.id}>
+        <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-medium tracking-[0.06em]">MEMORY #{String(memoryNumber).padStart(3, "0")}</span><span className="text-[11px] text-secondary">{Math.round(lesson.confidence * 100)}%</span></div>
+        <h4 className="mt-2 text-[13px] font-medium leading-5">{lesson.context}</h4>
+        <p className="mt-3 text-[10px] font-medium tracking-[0.04em] text-secondary">WHY RELEVANT</p><p className="mt-1 text-[12px] leading-5">{relevance}</p>
+        <p className="mt-3 text-[10px] font-medium tracking-[0.04em] text-secondary">DO</p>{lesson.do.map((rule) => <p className="mt-1 flex gap-1.5 text-[12px] leading-5" key={rule}><span>✓</span><span>{rule}</span></p>)}
+      </article>;
+    })}</div>}
+
+    {memories.length > 0 && <button className="button-secondary mt-4 w-full disabled:cursor-not-allowed disabled:text-tertiary" disabled={status === "loading"} onClick={onRetrieve} type="button">{status === "loading" ? "Finding memories..." : "Find relevant memories"}</button>}
+    {memories.length === 0 && <p className="mt-3 text-[12px] leading-5 text-secondary">Save a lesson to Team Memory before searching.</p>}
+    {error && <p className="mt-2 text-[12px] leading-5 text-secondary" role="alert">{error}</p>}
+  </section>;
+}
+
 function MemoryPanel({ memories, onDelete, onClear, retrievalStatus, relevantMemories, retrievalError, onRetrieve }: { memories: Lesson[]; onDelete: (id: string) => void; onClear: () => void; retrievalStatus: RetrievalStatus; relevantMemories: ResolvedMemoryMatch[]; retrievalError: string | null; onRetrieve: () => void }) {
   const [confirmClear, setConfirmClear] = useState(false);
   return (
@@ -209,25 +236,7 @@ function MemoryPanel({ memories, onDelete, onClear, retrievalStatus, relevantMem
         </article>)}
         {!confirmClear ? <button className="min-h-11 text-xs font-medium text-secondary underline decoration-hairline underline-offset-4 hover:text-black" onClick={() => setConfirmClear(true)} type="button">Clear memory</button> : <div className="rounded-lg border border-hairline p-3 text-[13px]"><p>Clear all Team Memory?</p><div className="mt-3 flex gap-2"><button className="button-primary button-small" onClick={() => { onClear(); setConfirmClear(false); }} type="button">Clear all</button><button className="button-ghost button-small" onClick={() => setConfirmClear(false)} type="button">Cancel</button></div></div>}
       </div>}
-      <div className="rounded-xl bg-pistachio/45 p-4">
-        <div className="flex items-center justify-between gap-3"><h3 className="text-sm font-medium">Relevant memories</h3>{retrievalStatus === "success" && <span className="rounded-full bg-aloe px-2.5 py-1 text-[11px] font-medium">{relevantMemories.length} found</span>}</div>
-        {memories.length === 0 ? <p className="mt-2 text-[13px] leading-5 text-secondary">No team memories available yet.</p> : <>
-          {retrievalStatus === "idle" && <p className="mt-2 text-[13px] leading-5 text-secondary">No memories retrieved for this product yet.</p>}
-          {retrievalStatus === "loading" && <p className="mt-3 flex items-center gap-2 text-[13px] text-secondary"><span aria-hidden="true" className="h-3.5 w-3.5 animate-spin rounded-full border border-zinc-400 border-t-black" />Finding relevant memories...</p>}
-          {retrievalStatus === "success" && relevantMemories.length === 0 && <p className="mt-2 text-[13px] leading-5 text-secondary">No learned lessons appear useful for this product.</p>}
-          {relevantMemories.length > 0 && <div className="mt-4 space-y-3">{relevantMemories.map(({ lesson, relevance }) => {
-            const memoryNumber = memories.findIndex((memory) => memory.id === lesson.id) + 1;
-            return <article className="rounded-lg border border-aloe bg-white p-3" key={lesson.id}>
-              <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-medium tracking-[0.06em]">MEMORY #{String(memoryNumber).padStart(3, "0")}</span><span className="text-[11px] text-secondary">{Math.round(lesson.confidence * 100)}%</span></div>
-              <h4 className="mt-2 text-[13px] font-medium leading-5">{lesson.context}</h4>
-              <p className="mt-3 text-[10px] font-medium tracking-[0.04em] text-secondary">WHY RELEVANT</p><p className="mt-1 text-[12px] leading-5">{relevance}</p>
-              <p className="mt-3 text-[10px] font-medium tracking-[0.04em] text-secondary">DO</p>{lesson.do.map((rule) => <p className="mt-1 flex gap-1.5 text-[12px] leading-5" key={rule}><span>✓</span><span>{rule}</span></p>)}
-            </article>;
-          })}</div>}
-          <button className="button-secondary mt-4 w-full disabled:cursor-not-allowed disabled:text-tertiary" disabled={retrievalStatus === "loading"} onClick={onRetrieve} type="button">{retrievalStatus === "loading" ? "Finding memories..." : "Find relevant memories"}</button>
-          {retrievalError && <p className="mt-2 text-[12px] leading-5 text-secondary" role="alert">{retrievalError}</p>}
-        </>}
-      </div>
+      <RelevantMemoriesPanel error={retrievalError} matches={relevantMemories} memories={memories} onRetrieve={onRetrieve} status={retrievalStatus} />
     </aside>
   );
 }
