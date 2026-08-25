@@ -8,6 +8,8 @@ Select only saved lessons that can genuinely improve title generation for the cu
 
 Avoid over-retrieval. A lesson's stated context is an applicability boundary, not merely a topic hint. Select it only when the current product shares the underlying category, theme, customer intent, or communication goal that makes the rule useful. Generic overlap such as personalization, gifts, emotion, a recipient, or a product title is not enough by itself. A conflicting theme or purchase intent is evidence against retrieval.
 
+A returned match must be clearly and directly relevant. If your own assessment would describe a lesson as only weakly relevant, partially relevant, limited, tangential, or conflicting, exclude it from matches. Do not return low-quality matches with caveats in the relevance explanation; return zero matches instead.
+
 For example, a lesson for personalized memorial products transfers from a dog ornament to a cat memorial frame because both are personalized memorial products. It does not transfer to a funny retirement mug merely because both products are personalized or could use emotional language. Prefer zero matches over stretching a lesson beyond its stated context. Return only IDs from the supplied Team Memory, with a concise explanation of why each lesson transfers to this product.
 
 Do not rewrite, summarize, mutate, reinforce, or create memories. Return only the requested structured data.`;

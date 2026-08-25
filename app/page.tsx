@@ -269,6 +269,10 @@ export default function Home() {
   const changeProductContext = (field: keyof ProductContext, value: string) => {
     setProductContext((current) => ({ ...current, [field]: value }));
     resetRetrieval();
+    setTitles([]);
+    setGeneratedContext(null);
+    setGenerationMeta({ usedMemory: false, memoryIds: [] });
+    setError(null);
   };
   const saveLesson = (lesson: Lesson) => {
     setMemories(saveMemory(lesson));

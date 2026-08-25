@@ -71,9 +71,12 @@ Confidence: ${lesson.confidence}${lesson.goodExample ? `\nGood example (illustra
 
   return `RELEVANT TEAM LESSONS
 
-The team previously reviewed similar work and learned the following reusable lessons.
-Use these lessons as guidance when they apply. Higher-confidence lessons should carry more weight, but no lesson is an absolute rule. Never violate the current Product Context to follow a lesson.
-Do not blindly copy examples. Do not mention lessons or the memory system in the output. Do not copy example titles verbatim unless naturally appropriate. Preserve meaningful diversity across all five candidates.
+These are learned behavioral instructions from previous human feedback.
+For every applicable lesson, follow its DO rules and avoid its DON'T rules. The new output must materially reflect the learned preference in its structure, priority, or tone; do not treat these lessons as optional background context.
+
+Apply the behavioral change across the title set while preserving meaningful diversity. Vary how the learned preference is expressed rather than repeating one opening or template. Do not blindly copy examples, and do not copy a Good Example verbatim. Do not mention lessons or the memory system in the output.
+
+Higher-confidence lessons should carry more weight, but never override factual Product Context. The product type, features, recipient, theme, occasion, niche, and personalization must remain factually correct.
 
 ${lessons.join("\n\n")}`;
 }
@@ -93,7 +96,7 @@ export async function generateTitles(
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const response = await client.responses.create({
     model: AI_MODELS.generate,
-    instructions: `${SYSTEM_INSTRUCTION}\n\n${relevantMemories.length === 0 ? NO_MEMORY_INSTRUCTION : "Apply only the relevant team lessons supplied with this request."}`,
+    instructions: `${SYSTEM_INSTRUCTION}\n\n${relevantMemories.length === 0 ? NO_MEMORY_INSTRUCTION : "Apply only the relevant team lessons supplied with this request. Their applicable DO and DON'T rules are required behavioral constraints for this title set, while factual Product Context remains authoritative."}`,
     input: [formatRelevantMemories(relevantMemories), formatProductContext(productContext)].filter(Boolean).join("\n\n"),
     text: {
       format: {
