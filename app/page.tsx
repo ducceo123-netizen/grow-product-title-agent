@@ -1,9 +1,9 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import type { ApiErrorResponse, GeneratedTitle, GenerateResponse, ProductContext } from "@/lib/types";
+import type { ApiErrorResponse, GeneratedTitle, GenerateResponse, LearnResponse, Lesson, ProductContext, ReviewAction } from "@/lib/types";
 
-type ReviewState = "approved" | "rejected" | null;
+type ReviewState = ReviewAction | null;
 
 const fields = [
   ["Product Description", "productDescription", "Personalized memorial ornament featuring a customer's dog photo and name."],
@@ -74,29 +74,71 @@ function Sparkle() {
   return <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 16 16"><path d="M8 1.5c.42 3.4 2.1 5.08 5.5 5.5C10.1 7.42 8.42 9.1 8 12.5 7.58 9.1 5.9 7.42 2.5 7 5.9 6.58 7.58 4.9 8 1.5Z" stroke="currentColor" strokeLinejoin="round"/><path d="M3.5 11c.16 1.26.74 1.84 2 2-1.26.16-1.84.74-2 2-.16-1.26-.74-1.84-2-2 1.26-.16 1.84-.74 2-2Z" fill="currentColor"/></svg>;
 }
 
-function FeedbackBox({ state }: { state: Exclude<ReviewState, null> }) {
-  const [submitted, setSubmitted] = useState(false);
-  if (submitted) return (
-    <div className="mt-4 flex gap-3 rounded-lg bg-pistachio/70 p-4" role="status">
-      <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-black" />
-      <div><p className="text-sm font-medium">Feedback captured</p><p className="mt-0.5 text-[13px] text-secondary">Learning will be added in the next milestone.</p></div>
+function LessonView({ lesson }: { lesson: Lesson }) {
+  return <div className="mt-4 rounded-xl border border-aloe bg-pistachio/45 p-4 sm:p-5" role="status">
+    <p className="text-[11px] font-medium tracking-[0.06em]">NEW LESSON LEARNED</p>
+    <div className="mt-4 space-y-4 text-sm">
+      <div><p className="text-xs font-medium tracking-[0.04em] text-secondary">CONTEXT</p><p className="mt-1">{lesson.context}</p></div>
+      <div><p className="text-xs font-medium tracking-[0.04em] text-secondary">DO</p><ul className="mt-1.5 space-y-1">{lesson.do.map((rule) => <li className="flex gap-2" key={rule}><span aria-hidden="true">✓</span><span>{rule}</span></li>)}</ul></div>
+      {lesson.dont.length > 0 && <div><p className="text-xs font-medium tracking-[0.04em] text-secondary">DON&apos;T</p><ul className="mt-1.5 space-y-1">{lesson.dont.map((rule) => <li className="flex gap-2" key={rule}><span aria-hidden="true">×</span><span>{rule}</span></li>)}</ul></div>}
+      <div><p className="text-xs font-medium tracking-[0.04em] text-secondary">WHY</p><p className="mt-1 leading-5">{lesson.reason}</p></div>
+      {(lesson.goodExample || lesson.badExample) && <div className="grid gap-3 border-t border-hairline pt-4 sm:grid-cols-2">
+        {lesson.goodExample && <div><p className="text-xs font-medium text-secondary">Good example</p><p className="mt-1 leading-5">{lesson.goodExample}</p></div>}
+        {lesson.badExample && <div><p className="text-xs font-medium text-secondary">Bad example</p><p className="mt-1 leading-5">{lesson.badExample}</p></div>}
+      </div>}
+      <div className="flex items-center justify-between border-t border-hairline pt-3"><span className="text-xs font-medium text-secondary">Confidence</span><span className="rounded-full bg-aloe px-3 py-1 text-xs font-medium">{Math.round(lesson.confidence * 100)}%</span></div>
     </div>
-  );
+  </div>;
+}
+
+function FeedbackBox({ state, productContext, originalTitle, editedTitle }: { state: Exclude<ReviewState, null>; productContext: ProductContext; originalTitle: string; editedTitle?: string }) {
+  const [lesson, setLesson] = useState<Lesson | null>(null);
+  const [learning, setLearning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (lesson) return <LessonView lesson={lesson} />;
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const reason = String(data.get("reason") || "").trim();
+    setError(null);
+    if (!reason) {
+      setError("Tell the agent why before submitting feedback.");
+      return;
+    }
+    setLearning(true);
+    try {
+      const response = await fetch("/api/learn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productContext, review: { action: state, originalTitle, ...(state === "edit" ? { editedTitle } : {}), reason } }),
+      });
+      const result = (await response.json()) as LearnResponse | ApiErrorResponse;
+      if (!response.ok || "error" in result) throw new Error("error" in result ? result.error : "Learning failed.");
+      setLesson(result.lesson);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Network error. Please try again.");
+    } finally {
+      setLearning(false);
+    }
+  };
+
   return (
-    <form className="mt-4 border-t border-hairline pt-4" onSubmit={(e) => { e.preventDefault(); setSubmitted(true); }}>
+    <form className="mt-4 border-t border-hairline pt-4" onSubmit={submit}>
       <label className="text-[13px] font-medium" htmlFor={`feedback-${state}`}>Why?</label>
-      <textarea id={`feedback-${state}`} className="field mt-2 min-h-20 resize-y" placeholder="Tell the agent what worked or what should change..." required />
-      <button className="button-secondary mt-3" type="submit">Submit feedback</button>
+      <textarea id={`feedback-${state}`} name="reason" className="field mt-2 min-h-20 resize-y" placeholder="Tell the agent what worked or what should change..." required />
+      <button className="button-secondary mt-3 disabled:cursor-not-allowed disabled:text-tertiary" disabled={learning} type="submit">{learning ? <><LoadingSpinner /> Learning...</> : "Submit feedback"}</button>
+      {error && <p className="mt-2 text-[13px] leading-5 text-secondary" role="alert">{error}</p>}
     </form>
   );
 }
 
-function TitleCard({ title, index }: { title: string; index: number }) {
+function TitleCard({ title, index, productContext }: { title: string; index: number; productContext: ProductContext }) {
   const [review, setReview] = useState<ReviewState>(null);
   const [editing, setEditing] = useState(false);
   const [savedTitle, setSavedTitle] = useState(title);
   const [draft, setDraft] = useState(title);
-  const save = () => { if (draft.trim()) { setSavedTitle(draft.trim()); setEditing(false); } };
+  const save = () => { if (draft.trim()) { setSavedTitle(draft.trim()); setEditing(false); setReview("edit"); } };
 
   return (
     <article className="rounded-xl border border-hairline bg-white p-4 sm:p-5">
@@ -114,16 +156,16 @@ function TitleCard({ title, index }: { title: string; index: number }) {
         </div>
       </div>
       {!editing && <div className="mt-5 flex flex-wrap gap-2 pl-0 sm:pl-8">
-        <button aria-pressed={review === "approved"} className={review === "approved" ? "button-primary button-small" : "button-ghost button-small"} onClick={() => setReview(review === "approved" ? null : "approved")} type="button">Approve</button>
+        <button aria-pressed={review === "approve"} className={review === "approve" ? "button-primary button-small" : "button-ghost button-small"} onClick={() => setReview(review === "approve" ? null : "approve")} type="button">Approve</button>
         <button className="button-ghost button-small border-black" onClick={() => setEditing(true)} type="button">Edit</button>
-        <button aria-pressed={review === "rejected"} className={review === "rejected" ? "button-primary button-small" : "button-ghost button-small"} onClick={() => setReview(review === "rejected" ? null : "rejected")} type="button">Reject</button>
+        <button aria-pressed={review === "reject"} className={review === "reject" ? "button-primary button-small" : "button-ghost button-small"} onClick={() => setReview(review === "reject" ? null : "reject")} type="button">Reject</button>
       </div>}
-      {review && !editing && <div className="sm:pl-8"><FeedbackBox key={review} state={review} /></div>}
+      {review && !editing && <div className="sm:pl-8"><FeedbackBox editedTitle={review === "edit" ? savedTitle : undefined} key={`${review}-${savedTitle}`} originalTitle={title} productContext={productContext} state={review} /></div>}
     </article>
   );
 }
 
-function TitleList({ titles }: { titles: GeneratedTitle[] }) {
+function TitleList({ titles, productContext }: { titles: GeneratedTitle[]; productContext: ProductContext | null }) {
   return (
     <section className="workspace-panel border-hairline py-8 md:border-l md:pl-8 lg:border-r lg:px-8 lg:py-0">
       <div className="flex items-center justify-between gap-4">
@@ -135,7 +177,7 @@ function TitleList({ titles }: { titles: GeneratedTitle[] }) {
           <div><p className="font-medium">Ready when you are.</p><p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-secondary">Add your product context and generate your first set of titles.</p></div>
         </div>
       ) : (
-        <div className="mt-6 space-y-3">{titles.map((title, index) => <TitleCard index={index} key={title.id} title={title.text} />)}</div>
+        <div className="mt-6 space-y-3">{productContext && titles.map((title, index) => <TitleCard index={index} key={title.id} productContext={productContext} title={title.text} />)}</div>
       )}
     </section>
   );
@@ -154,6 +196,7 @@ function MemoryPanel() {
 
 export default function Home() {
   const [titles, setTitles] = useState<GeneratedTitle[]>([]);
+  const [generatedContext, setGeneratedContext] = useState<ProductContext | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -179,6 +222,7 @@ export default function Home() {
         throw new Error("The server returned an invalid title response.");
       }
       setTitles(result.titles);
+      setGeneratedContext(context);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Network error. Please try again.");
     } finally {
@@ -194,7 +238,7 @@ export default function Home() {
         <p className="mt-4 max-w-lg text-[15px] leading-6 text-secondary">Generate product titles, review the results,<br className="hidden sm:block" /> and teach the agent what your team prefers.</p>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-[minmax(240px,0.75fr)_minmax(0,1.5fr)] lg:grid-cols-[minmax(230px,0.85fr)_minmax(440px,1.45fr)_minmax(220px,0.75fr)]">
-        <ProductForm error={error} loading={loading} onGenerate={generate} /><TitleList titles={titles} /><MemoryPanel />
+        <ProductForm error={error} loading={loading} onGenerate={generate} /><TitleList productContext={generatedContext} titles={titles} /><MemoryPanel />
       </div>
     </main></>
   );
