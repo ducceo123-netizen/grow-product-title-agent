@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { AI_MODELS } from "@/lib/ai/config";
-import type { GenerateResponse, Lesson, ProductContext } from "@/lib/types";
+import type { GeneratedTitle, Lesson, ProductContext } from "@/lib/types";
 
 const SYSTEM_INSTRUCTION = `You are a Product Title Agent for an e-commerce team.
 
@@ -71,8 +71,18 @@ Confidence: ${lesson.confidence}${lesson.goodExample ? `\nGood example (illustra
 
   return `RELEVANT TEAM LESSONS
 
-These are learned behavioral instructions from previous human feedback.
-For every applicable lesson, follow its DO rules and avoid its DON'T rules. The new output must materially reflect the learned preference in its structure, priority, or tone; do not treat these lessons as optional background context.
+You are generating a new output using previously learned team preferences.
+These are learned behavioral instructions from previous human feedback, not optional background information.
+
+For each relevant lesson:
+- Follow every applicable DO instruction.
+- Avoid every applicable DON'T instruction.
+- Materially change structure, emphasis, or tone when required by the lesson.
+- Preserve factual accuracy from the current Product Context.
+- Do not mention the lesson or memory system.
+- Do not blindly copy examples.
+
+The resulting title set must visibly demonstrate the learned preference.
 
 Apply the behavioral change across the title set while preserving meaningful diversity. Vary how the learned preference is expressed rather than repeating one opening or template. Do not blindly copy examples, and do not copy a Good Example verbatim. Do not mention lessons or the memory system in the output.
 
@@ -81,7 +91,9 @@ Higher-confidence lessons should carry more weight, but never override factual P
 ${lessons.join("\n\n")}`;
 }
 
-function isGenerateResponse(value: unknown): value is GenerateResponse {
+type GeneratedTitlesResult = { titles: GeneratedTitle[] };
+
+function isGeneratedTitlesResult(value: unknown): value is GeneratedTitlesResult {
   if (!value || typeof value !== "object" || !("titles" in value)) return false;
   const titles = (value as { titles: unknown }).titles;
   return Array.isArray(titles) && titles.length === 5 && titles.every(
@@ -92,7 +104,7 @@ function isGenerateResponse(value: unknown): value is GenerateResponse {
 export async function generateTitles(
   productContext: ProductContext,
   relevantMemories: Lesson[] = [],
-): Promise<GenerateResponse> {
+): Promise<GeneratedTitlesResult> {
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const response = await client.responses.create({
     model: AI_MODELS.generate,
@@ -126,7 +138,7 @@ export async function generateTitles(
     throw new Error("The AI returned invalid JSON.");
   }
 
-  if (!isGenerateResponse(parsed)) throw new Error("The AI returned an invalid title structure.");
+  if (!isGeneratedTitlesResult(parsed)) throw new Error("The AI returned an invalid title structure.");
 
   const uniqueTitles = new Set(parsed.titles.map((title) => title.text.trim().toLocaleLowerCase()));
   if (uniqueTitles.size !== 5) throw new Error("The AI returned duplicate titles.");

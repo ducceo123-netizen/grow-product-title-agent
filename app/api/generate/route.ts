@@ -50,6 +50,22 @@ export async function POST(request: Request): Promise<NextResponse<GenerateRespo
     return NextResponse.json({ error: "Relevant memory IDs must be unique." }, { status: 400 });
   }
 
+  console.log({
+    stage: "generate-memory-debug",
+    receivedMemoryCount: relevantMemories.length,
+    memoryIds: relevantMemories.map((memory) => memory.id),
+  });
+
+  const expectedMemoryCount = Number(request.headers.get("x-grow-memory-expected") || 0);
+  if (process.env.NODE_ENV !== "production" && expectedMemoryCount > 0 && relevantMemories.length === 0) {
+    console.warn({
+      stage: "generate-memory-mismatch",
+      expectedMemoryCount,
+      receivedMemoryCount: 0,
+      message: "The UI reported retrieved memories, but /api/generate received none.",
+    });
+  }
+
   const context: ProductContext = {
     productDescription,
     productLine: optionalString(contextInput.productLine),
@@ -60,7 +76,14 @@ export async function POST(request: Request): Promise<NextResponse<GenerateRespo
   };
 
   try {
-    return NextResponse.json(await generateTitles(context, relevantMemories));
+    const result = await generateTitles(context, relevantMemories);
+    return NextResponse.json({
+      ...result,
+      generationMeta: {
+        usedMemory: relevantMemories.length > 0,
+        memoryIds: relevantMemories.map((memory) => memory.id),
+      },
+    });
   } catch (error) {
     console.error("Title generation failed:", error instanceof Error ? error.message : "Unknown error");
     return NextResponse.json(

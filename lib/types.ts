@@ -14,6 +14,7 @@ export type GeneratedTitle = {
 
 export type GenerateResponse = {
   titles: GeneratedTitle[];
+  generationMeta: GenerationMeta;
 };
 
 export type GenerateRequest = {
