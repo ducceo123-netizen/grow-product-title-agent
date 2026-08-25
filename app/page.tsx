@@ -2,18 +2,30 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { clearMemories, deleteMemory, getMemories, hasMemory, saveMemory } from "@/lib/memory/client";
-import type { ApiErrorResponse, GeneratedTitle, GenerateResponse, LearnResponse, Lesson, ProductContext, ReviewAction } from "@/lib/types";
+import type { ApiErrorResponse, GeneratedTitle, GenerateResponse, LearnResponse, Lesson, ProductContext, RetrieveResponse, ReviewAction } from "@/lib/types";
 
 type ReviewState = ReviewAction | null;
 
-const fields = [
-  ["Product Description", "productDescription", "Personalized memorial ornament featuring a customer's dog photo and name."],
-  ["Product Line", "productLine", "Ornament"],
-  ["Product Theme", "productTheme", "Memorial"],
-  ["Recipient", "recipient", "Pet Owner"],
-  ["Occasion", "occasion", "Christmas"],
-  ["Niche / Interest", "niche", "Dog Lovers"],
+const initialProductContext: ProductContext = {
+  productDescription: "Personalized memorial ornament featuring a customer's dog photo and name.",
+  productLine: "Ornament",
+  productTheme: "Memorial",
+  recipient: "Pet Owner",
+  occasion: "Christmas",
+  niche: "Dog Lovers",
+};
+
+const fields: Array<[string, keyof ProductContext]> = [
+  ["Product Description", "productDescription"],
+  ["Product Line", "productLine"],
+  ["Product Theme", "productTheme"],
+  ["Recipient", "recipient"],
+  ["Occasion", "occasion"],
+  ["Niche / Interest", "niche"],
 ];
+
+type ResolvedMemoryMatch = { lesson: Lesson; relevance: string };
+type RetrievalStatus = "idle" | "loading" | "success";
 
 function lessonCountLabel(count: number) {
   return `${count} ${count === 1 ? "lesson" : "lessons"} learned`;
@@ -33,18 +45,10 @@ function AppHeader({ memoryCount }: { memoryCount: number }) {
   );
 }
 
-function ProductForm({ onGenerate, loading, error }: { onGenerate: (context: ProductContext) => Promise<void>; loading: boolean; error: string | null }) {
+function ProductForm({ context, onContextChange, onGenerate, loading, error }: { context: ProductContext; onContextChange: (field: keyof ProductContext, value: string) => void; onGenerate: (context: ProductContext) => Promise<void>; loading: boolean; error: string | null }) {
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    void onGenerate({
-      productDescription: String(data.get("productDescription") || ""),
-      productLine: String(data.get("productLine") || ""),
-      productTheme: String(data.get("productTheme") || ""),
-      recipient: String(data.get("recipient") || ""),
-      occasion: String(data.get("occasion") || ""),
-      niche: String(data.get("niche") || ""),
-    });
+    void onGenerate(context);
   };
 
   return (
@@ -52,13 +56,13 @@ function ProductForm({ onGenerate, loading, error }: { onGenerate: (context: Pro
       <h2 className="section-title">Product context</h2>
       <p className="section-caption">Give the agent enough context to understand the product.</p>
       <form className="mt-6 space-y-4" onSubmit={submit}>
-        {fields.map(([label, name, value], index) => (
+        {fields.map(([label, name], index) => (
           <label className="block" key={label}>
             <span className="mb-2 block text-[13px] font-medium">{label}</span>
             {index === 0 ? (
-              <textarea className="field min-h-24 resize-y" defaultValue={value} name={name} />
+              <textarea className="field min-h-24 resize-y" name={name} onChange={(event) => onContextChange(name, event.target.value)} value={context[name] || ""} />
             ) : (
-              <input className="field" defaultValue={value} name={name} />
+              <input className="field" name={name} onChange={(event) => onContextChange(name, event.target.value)} value={context[name] || ""} />
             )}
           </label>
         ))}
@@ -189,7 +193,7 @@ function TitleList({ titles, productContext, memories, onSave }: { titles: Gener
   );
 }
 
-function MemoryPanel({ memories, onDelete, onClear }: { memories: Lesson[]; onDelete: (id: string) => void; onClear: () => void }) {
+function MemoryPanel({ memories, onDelete, onClear, retrievalStatus, relevantMemories, retrievalError, onRetrieve }: { memories: Lesson[]; onDelete: (id: string) => void; onClear: () => void; retrievalStatus: RetrievalStatus; relevantMemories: ResolvedMemoryMatch[]; retrievalError: string | null; onRetrieve: () => void }) {
   const [confirmClear, setConfirmClear] = useState(false);
   return (
     <aside className="workspace-panel border-t border-hairline pt-8 md:col-span-2 lg:col-span-1 lg:border-t-0 lg:pl-8 lg:pt-0">
@@ -205,27 +209,95 @@ function MemoryPanel({ memories, onDelete, onClear }: { memories: Lesson[]; onDe
         </article>)}
         {!confirmClear ? <button className="min-h-11 text-xs font-medium text-secondary underline decoration-hairline underline-offset-4 hover:text-black" onClick={() => setConfirmClear(true)} type="button">Clear memory</button> : <div className="rounded-lg border border-hairline p-3 text-[13px]"><p>Clear all Team Memory?</p><div className="mt-3 flex gap-2"><button className="button-primary button-small" onClick={() => { onClear(); setConfirmClear(false); }} type="button">Clear all</button><button className="button-ghost button-small" onClick={() => setConfirmClear(false)} type="button">Cancel</button></div></div>}
       </div>}
-      <div className="rounded-xl bg-pistachio/45 p-4"><h3 className="text-sm font-medium">Relevant memories</h3><p className="mt-2 text-[13px] leading-5 text-secondary">No relevant memories for this product yet.</p></div>
+      <div className="rounded-xl bg-pistachio/45 p-4">
+        <div className="flex items-center justify-between gap-3"><h3 className="text-sm font-medium">Relevant memories</h3>{retrievalStatus === "success" && <span className="rounded-full bg-aloe px-2.5 py-1 text-[11px] font-medium">{relevantMemories.length} found</span>}</div>
+        {memories.length === 0 ? <p className="mt-2 text-[13px] leading-5 text-secondary">No team memories available yet.</p> : <>
+          {retrievalStatus === "idle" && <p className="mt-2 text-[13px] leading-5 text-secondary">No memories retrieved for this product yet.</p>}
+          {retrievalStatus === "loading" && <p className="mt-3 flex items-center gap-2 text-[13px] text-secondary"><span aria-hidden="true" className="h-3.5 w-3.5 animate-spin rounded-full border border-zinc-400 border-t-black" />Finding relevant memories...</p>}
+          {retrievalStatus === "success" && relevantMemories.length === 0 && <p className="mt-2 text-[13px] leading-5 text-secondary">No learned lessons appear useful for this product.</p>}
+          {relevantMemories.length > 0 && <div className="mt-4 space-y-3">{relevantMemories.map(({ lesson, relevance }) => {
+            const memoryNumber = memories.findIndex((memory) => memory.id === lesson.id) + 1;
+            return <article className="rounded-lg border border-aloe bg-white p-3" key={lesson.id}>
+              <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-medium tracking-[0.06em]">MEMORY #{String(memoryNumber).padStart(3, "0")}</span><span className="text-[11px] text-secondary">{Math.round(lesson.confidence * 100)}%</span></div>
+              <h4 className="mt-2 text-[13px] font-medium leading-5">{lesson.context}</h4>
+              <p className="mt-3 text-[10px] font-medium tracking-[0.04em] text-secondary">WHY RELEVANT</p><p className="mt-1 text-[12px] leading-5">{relevance}</p>
+              <p className="mt-3 text-[10px] font-medium tracking-[0.04em] text-secondary">DO</p>{lesson.do.map((rule) => <p className="mt-1 flex gap-1.5 text-[12px] leading-5" key={rule}><span>✓</span><span>{rule}</span></p>)}
+            </article>;
+          })}</div>}
+          <button className="button-secondary mt-4 w-full disabled:cursor-not-allowed disabled:text-tertiary" disabled={retrievalStatus === "loading"} onClick={onRetrieve} type="button">{retrievalStatus === "loading" ? "Finding memories..." : "Find relevant memories"}</button>
+          {retrievalError && <p className="mt-2 text-[12px] leading-5 text-secondary" role="alert">{retrievalError}</p>}
+        </>}
+      </div>
     </aside>
   );
 }
 
 export default function Home() {
+  const [productContext, setProductContext] = useState<ProductContext>(initialProductContext);
   const [titles, setTitles] = useState<GeneratedTitle[]>([]);
   const [generatedContext, setGeneratedContext] = useState<ProductContext | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [memories, setMemories] = useState<Lesson[]>([]);
+  const [retrievalStatus, setRetrievalStatus] = useState<RetrievalStatus>("idle");
+  const [relevantMemories, setRelevantMemories] = useState<ResolvedMemoryMatch[]>([]);
+  const [retrievalError, setRetrievalError] = useState<string | null>(null);
 
   useEffect(() => {
     setMemories(getMemories());
   }, []);
 
-  const saveLesson = (lesson: Lesson) => setMemories(saveMemory(lesson));
-  const removeLesson = (id: string) => setMemories(deleteMemory(id));
+  const resetRetrieval = () => {
+    setRetrievalStatus("idle");
+    setRelevantMemories([]);
+    setRetrievalError(null);
+  };
+  const changeProductContext = (field: keyof ProductContext, value: string) => {
+    setProductContext((current) => ({ ...current, [field]: value }));
+    resetRetrieval();
+  };
+  const saveLesson = (lesson: Lesson) => {
+    setMemories(saveMemory(lesson));
+    resetRetrieval();
+  };
+  const removeLesson = (id: string) => {
+    setMemories(deleteMemory(id));
+    resetRetrieval();
+  };
   const removeAllLessons = () => {
     clearMemories();
     setMemories([]);
+    resetRetrieval();
+  };
+
+  const retrieveMemories = async () => {
+    if (memories.length === 0) return;
+    setRetrievalError(null);
+    if (!productContext.productDescription.trim()) {
+      setRetrievalError("Product description is required to find relevant memories.");
+      return;
+    }
+    setRetrievalStatus("loading");
+    try {
+      const response = await fetch("/api/retrieve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productContext, memories }),
+      });
+      const result = (await response.json()) as RetrieveResponse | ApiErrorResponse;
+      if (!response.ok || "error" in result) throw new Error("error" in result ? result.error : "Memory retrieval failed.");
+      const resolved = result.matches.map((match) => {
+        const lesson = memories.find((memory) => memory.id === match.memoryId);
+        if (!lesson) throw new Error("The server returned an unknown memory ID.");
+        return { lesson, relevance: match.relevance };
+      });
+      setRelevantMemories(resolved);
+      setRetrievalStatus("success");
+    } catch (requestError) {
+      setRelevantMemories([]);
+      setRetrievalStatus("idle");
+      setRetrievalError(requestError instanceof Error ? requestError.message : "Network error. Please try again.");
+    }
   };
 
   const generate = async (context: ProductContext) => {
@@ -266,7 +338,7 @@ export default function Home() {
         <p className="mt-4 max-w-lg text-[15px] leading-6 text-secondary">Generate product titles, review the results,<br className="hidden sm:block" /> and teach the agent what your team prefers.</p>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-[minmax(240px,0.75fr)_minmax(0,1.5fr)] lg:grid-cols-[minmax(230px,0.85fr)_minmax(440px,1.45fr)_minmax(220px,0.75fr)]">
-        <ProductForm error={error} loading={loading} onGenerate={generate} /><TitleList memories={memories} onSave={saveLesson} productContext={generatedContext} titles={titles} /><MemoryPanel memories={memories} onClear={removeAllLessons} onDelete={removeLesson} />
+        <ProductForm context={productContext} error={error} loading={loading} onContextChange={changeProductContext} onGenerate={generate} /><TitleList memories={memories} onSave={saveLesson} productContext={generatedContext} titles={titles} /><MemoryPanel memories={memories} onClear={removeAllLessons} onDelete={removeLesson} onRetrieve={retrieveMemories} relevantMemories={relevantMemories} retrievalError={retrievalError} retrievalStatus={retrievalStatus} />
       </div>
     </main></>
   );

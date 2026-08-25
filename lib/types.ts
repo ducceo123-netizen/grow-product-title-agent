@@ -48,3 +48,17 @@ export type LearnRequest = {
 export type LearnResponse = {
   lesson: Lesson;
 };
+
+export type RetrieveRequest = {
+  productContext: ProductContext;
+  memories: Lesson[];
+};
+
+export type RetrievedMemoryMatch = {
+  memoryId: string;
+  relevance: string;
+};
+
+export type RetrieveResponse = {
+  matches: RetrievedMemoryMatch[];
+};
