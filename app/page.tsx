@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import { clearMemories, deleteMemory, getMemories, hasMemory, saveMemory } from "@/lib/memory/client";
 import type { ApiErrorResponse, GeneratedTitle, GenerateResponse, LearnResponse, Lesson, ProductContext, ReviewAction } from "@/lib/types";
 
 type ReviewState = ReviewAction | null;
@@ -14,7 +15,11 @@ const fields = [
   ["Niche / Interest", "niche", "Dog Lovers"],
 ];
 
-function AppHeader() {
+function lessonCountLabel(count: number) {
+  return `${count} ${count === 1 ? "lesson" : "lessons"} learned`;
+}
+
+function AppHeader({ memoryCount }: { memoryCount: number }) {
   return (
     <header className="border-b border-hairline bg-white">
       <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between px-5 sm:px-8">
@@ -22,7 +27,7 @@ function AppHeader() {
           <span className="text-[17px] font-semibold tracking-[-0.02em]">GROW</span>
           <span className="hidden text-sm text-secondary sm:inline">Product Title Agent</span>
         </div>
-        <span className="rounded-full bg-aloe px-3 py-1.5 text-[13px] font-medium">0 lessons learned</span>
+        <span className="rounded-full bg-aloe px-3 py-1.5 text-[13px] font-medium">{lessonCountLabel(memoryCount)}</span>
       </div>
     </header>
   );
@@ -74,7 +79,7 @@ function Sparkle() {
   return <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 16 16"><path d="M8 1.5c.42 3.4 2.1 5.08 5.5 5.5C10.1 7.42 8.42 9.1 8 12.5 7.58 9.1 5.9 7.42 2.5 7 5.9 6.58 7.58 4.9 8 1.5Z" stroke="currentColor" strokeLinejoin="round"/><path d="M3.5 11c.16 1.26.74 1.84 2 2-1.26.16-1.84.74-2 2-.16-1.26-.74-1.84-2-2 1.26-.16 1.84-.74 2-2Z" fill="currentColor"/></svg>;
 }
 
-function LessonView({ lesson }: { lesson: Lesson }) {
+function LessonView({ lesson, saved, onSave }: { lesson: Lesson; saved: boolean; onSave: (lesson: Lesson) => void }) {
   return <div className="mt-4 rounded-xl border border-aloe bg-pistachio/45 p-4 sm:p-5" role="status">
     <p className="text-[11px] font-medium tracking-[0.06em]">NEW LESSON LEARNED</p>
     <div className="mt-4 space-y-4 text-sm">
@@ -87,15 +92,16 @@ function LessonView({ lesson }: { lesson: Lesson }) {
         {lesson.badExample && <div><p className="text-xs font-medium text-secondary">Bad example</p><p className="mt-1 leading-5">{lesson.badExample}</p></div>}
       </div>}
       <div className="flex items-center justify-between border-t border-hairline pt-3"><span className="text-xs font-medium text-secondary">Confidence</span><span className="rounded-full bg-aloe px-3 py-1 text-xs font-medium">{Math.round(lesson.confidence * 100)}%</span></div>
+      <button className={saved ? "button-ghost w-full border-aloe bg-aloe/40" : "button-primary w-full"} disabled={saved} onClick={() => onSave(lesson)} type="button">{saved ? "✓ Saved to Team Memory" : "Save to Memory"}</button>
     </div>
   </div>;
 }
 
-function FeedbackBox({ state, productContext, originalTitle, editedTitle }: { state: Exclude<ReviewState, null>; productContext: ProductContext; originalTitle: string; editedTitle?: string }) {
+function FeedbackBox({ state, productContext, originalTitle, editedTitle, memories, onSave }: { state: Exclude<ReviewState, null>; productContext: ProductContext; originalTitle: string; editedTitle?: string; memories: Lesson[]; onSave: (lesson: Lesson) => void }) {
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [learning, setLearning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  if (lesson) return <LessonView lesson={lesson} />;
+  if (lesson) return <LessonView lesson={lesson} onSave={onSave} saved={hasMemory(memories, lesson)} />;
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -133,7 +139,7 @@ function FeedbackBox({ state, productContext, originalTitle, editedTitle }: { st
   );
 }
 
-function TitleCard({ title, index, productContext }: { title: string; index: number; productContext: ProductContext }) {
+function TitleCard({ title, index, productContext, memories, onSave }: { title: string; index: number; productContext: ProductContext; memories: Lesson[]; onSave: (lesson: Lesson) => void }) {
   const [review, setReview] = useState<ReviewState>(null);
   const [editing, setEditing] = useState(false);
   const [savedTitle, setSavedTitle] = useState(title);
@@ -160,12 +166,12 @@ function TitleCard({ title, index, productContext }: { title: string; index: num
         <button className="button-ghost button-small border-black" onClick={() => setEditing(true)} type="button">Edit</button>
         <button aria-pressed={review === "reject"} className={review === "reject" ? "button-primary button-small" : "button-ghost button-small"} onClick={() => setReview(review === "reject" ? null : "reject")} type="button">Reject</button>
       </div>}
-      {review && !editing && <div className="sm:pl-8"><FeedbackBox editedTitle={review === "edit" ? savedTitle : undefined} key={`${review}-${savedTitle}`} originalTitle={title} productContext={productContext} state={review} /></div>}
+      {review && !editing && <div className="sm:pl-8"><FeedbackBox editedTitle={review === "edit" ? savedTitle : undefined} key={`${review}-${savedTitle}`} memories={memories} onSave={onSave} originalTitle={title} productContext={productContext} state={review} /></div>}
     </article>
   );
 }
 
-function TitleList({ titles, productContext }: { titles: GeneratedTitle[]; productContext: ProductContext | null }) {
+function TitleList({ titles, productContext, memories, onSave }: { titles: GeneratedTitle[]; productContext: ProductContext | null; memories: Lesson[]; onSave: (lesson: Lesson) => void }) {
   return (
     <section className="workspace-panel border-hairline py-8 md:border-l md:pl-8 lg:border-r lg:px-8 lg:py-0">
       <div className="flex items-center justify-between gap-4">
@@ -177,18 +183,28 @@ function TitleList({ titles, productContext }: { titles: GeneratedTitle[]; produ
           <div><p className="font-medium">Ready when you are.</p><p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-secondary">Add your product context and generate your first set of titles.</p></div>
         </div>
       ) : (
-        <div className="mt-6 space-y-3">{productContext && titles.map((title, index) => <TitleCard index={index} key={title.id} productContext={productContext} title={title.text} />)}</div>
+        <div className="mt-6 space-y-3">{productContext && titles.map((title, index) => <TitleCard index={index} key={title.id} memories={memories} onSave={onSave} productContext={productContext} title={title.text} />)}</div>
       )}
     </section>
   );
 }
 
-function MemoryPanel() {
+function MemoryPanel({ memories, onDelete, onClear }: { memories: Lesson[]; onDelete: (id: string) => void; onClear: () => void }) {
+  const [confirmClear, setConfirmClear] = useState(false);
   return (
     <aside className="workspace-panel border-t border-hairline pt-8 md:col-span-2 lg:col-span-1 lg:border-t-0 lg:pl-8 lg:pt-0">
       <div className="flex items-center justify-between"><h2 className="section-title">Team Memory</h2><span className="rounded-full bg-aloe px-3 py-1.5 text-[11px] tracking-[0.06em]">MEMORY</span></div>
-      <div className="mt-7 border-b border-hairline pb-7"><p className="text-5xl font-light tracking-[-0.04em]">0</p><p className="mt-1 text-sm text-secondary">Lessons learned</p></div>
-      <div className="py-7"><h3 className="font-medium">Nothing learned yet</h3><p className="mt-2 text-sm leading-6 text-secondary">Your feedback will become reusable lessons here.</p></div>
+      <div className="mt-7 border-b border-hairline pb-7"><p className="text-5xl font-light tracking-[-0.04em]">{memories.length}</p><p className="mt-1 text-sm text-secondary">{memories.length === 1 ? "Lesson learned" : "Lessons learned"}</p></div>
+      {memories.length === 0 ? <div className="py-7"><h3 className="font-medium">Nothing learned yet</h3><p className="mt-2 text-sm leading-6 text-secondary">Your feedback will become reusable lessons here.</p></div> : <div className="space-y-3 py-6">
+        {memories.map((lesson, index) => <article className="rounded-xl border border-hairline bg-white p-4" key={lesson.id}>
+          <div className="flex items-center justify-between gap-3"><span className="rounded-full bg-aloe px-2.5 py-1 text-[10px] font-medium tracking-[0.06em]">MEMORY #{String(index + 1).padStart(3, "0")}</span><span className="text-xs text-secondary">{Math.round(lesson.confidence * 100)}%</span></div>
+          <h3 className="mt-3 text-sm font-medium leading-5">{lesson.context}</h3>
+          <div className="mt-3 text-[13px] leading-5"><p className="text-[11px] font-medium tracking-[0.04em] text-secondary">DO</p>{lesson.do.map((rule) => <p className="mt-1 flex gap-1.5" key={rule}><span>✓</span><span>{rule}</span></p>)}</div>
+          {lesson.dont.length > 0 && <div className="mt-3 text-[13px] leading-5"><p className="text-[11px] font-medium tracking-[0.04em] text-secondary">DON&apos;T</p>{lesson.dont.map((rule) => <p className="mt-1 flex gap-1.5" key={rule}><span>×</span><span>{rule}</span></p>)}</div>}
+          <button className="mt-4 min-h-11 text-xs font-medium text-secondary underline decoration-hairline underline-offset-4 hover:text-black" onClick={() => onDelete(lesson.id)} type="button">Delete</button>
+        </article>)}
+        {!confirmClear ? <button className="min-h-11 text-xs font-medium text-secondary underline decoration-hairline underline-offset-4 hover:text-black" onClick={() => setConfirmClear(true)} type="button">Clear memory</button> : <div className="rounded-lg border border-hairline p-3 text-[13px]"><p>Clear all Team Memory?</p><div className="mt-3 flex gap-2"><button className="button-primary button-small" onClick={() => { onClear(); setConfirmClear(false); }} type="button">Clear all</button><button className="button-ghost button-small" onClick={() => setConfirmClear(false)} type="button">Cancel</button></div></div>}
+      </div>}
       <div className="rounded-xl bg-pistachio/45 p-4"><h3 className="text-sm font-medium">Relevant memories</h3><p className="mt-2 text-[13px] leading-5 text-secondary">No relevant memories for this product yet.</p></div>
     </aside>
   );
@@ -199,6 +215,18 @@ export default function Home() {
   const [generatedContext, setGeneratedContext] = useState<ProductContext | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [memories, setMemories] = useState<Lesson[]>([]);
+
+  useEffect(() => {
+    setMemories(getMemories());
+  }, []);
+
+  const saveLesson = (lesson: Lesson) => setMemories(saveMemory(lesson));
+  const removeLesson = (id: string) => setMemories(deleteMemory(id));
+  const removeAllLessons = () => {
+    clearMemories();
+    setMemories([]);
+  };
 
   const generate = async (context: ProductContext) => {
     setError(null);
@@ -231,14 +259,14 @@ export default function Home() {
   };
 
   return (
-    <><AppHeader /><main className="mx-auto max-w-[1440px] px-5 pb-16 sm:px-8">
+    <><AppHeader memoryCount={memories.length} /><main className="mx-auto max-w-[1440px] px-5 pb-16 sm:px-8">
       <div className="pb-8 pt-10 sm:pt-12">
         <p className="text-xs tracking-[0.06em] text-secondary">PRODUCT TITLE AGENT</p>
         <h1 className="mt-3 max-w-2xl text-[32px] font-light leading-[1.12] tracking-[-0.025em] sm:text-[38px]">Create better titles,<br />one feedback at a time.</h1>
         <p className="mt-4 max-w-lg text-[15px] leading-6 text-secondary">Generate product titles, review the results,<br className="hidden sm:block" /> and teach the agent what your team prefers.</p>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-[minmax(240px,0.75fr)_minmax(0,1.5fr)] lg:grid-cols-[minmax(230px,0.85fr)_minmax(440px,1.45fr)_minmax(220px,0.75fr)]">
-        <ProductForm error={error} loading={loading} onGenerate={generate} /><TitleList productContext={generatedContext} titles={titles} /><MemoryPanel />
+        <ProductForm error={error} loading={loading} onGenerate={generate} /><TitleList memories={memories} onSave={saveLesson} productContext={generatedContext} titles={titles} /><MemoryPanel memories={memories} onClear={removeAllLessons} onDelete={removeLesson} />
       </div>
     </main></>
   );
