@@ -50,11 +50,14 @@ export async function POST(request: Request): Promise<NextResponse<GenerateRespo
     return NextResponse.json({ error: "Relevant memory IDs must be unique." }, { status: 400 });
   }
 
-  console.log({
-    stage: "generate-memory-debug",
-    receivedMemoryCount: relevantMemories.length,
-    memoryIds: relevantMemories.map((memory) => memory.id),
-  });
+  if (process.env.NODE_ENV !== "production") {
+    console.log("M6_DEBUG_RECEIVED", {
+      relevantMemoryCount: relevantMemories?.length ?? 0,
+      memoryIds: relevantMemories?.map((memory) => memory.id) ?? [],
+      firstMemoryDo: relevantMemories?.[0]?.do ?? null,
+      firstMemoryDont: relevantMemories?.[0]?.dont ?? null,
+    });
+  }
 
   const expectedMemoryCount = Number(request.headers.get("x-grow-memory-expected") || 0);
   if (process.env.NODE_ENV !== "production" && expectedMemoryCount > 0 && relevantMemories.length === 0) {
@@ -78,10 +81,10 @@ export async function POST(request: Request): Promise<NextResponse<GenerateRespo
   try {
     const result = await generateTitles(context, relevantMemories);
     return NextResponse.json({
-      ...result,
+      titles: result.titles,
       generationMeta: {
-        usedMemory: relevantMemories.length > 0,
-        memoryIds: relevantMemories.map((memory) => memory.id),
+        usedMemory: result.includedMemoryIds.length > 0,
+        memoryIds: result.includedMemoryIds,
       },
     });
   } catch (error) {

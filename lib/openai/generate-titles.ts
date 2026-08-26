@@ -17,6 +17,15 @@ Titles must:
 Generate exactly 5 meaningfully different title candidates. Return title text only in the requested structure, with no markdown or explanations.`;
 
 const NO_MEMORY_INSTRUCTION = "There is currently no learned team memory. Do not claim or imply that preferences have already been learned.";
+const MEMORY_CONSTRAINT_INSTRUCTION = `Relevant Team Lessons are learned behavioral constraints from prior human feedback.
+
+For each lesson that applies:
+- Satisfy every applicable DO instruction.
+- Violate none of the applicable DON'T instructions.
+- Make the learned preference observable in the generated output.
+- Preserve all factual Product Context.
+
+Before returning each candidate, internally verify it against every applicable lesson. If it violates an applicable DO or DON'T rule, rewrite it before returning it. This verification must use the supplied Lesson instructions themselves; do not infer or add domain-specific rules that are not present in a Lesson.`;
 
 const titleSchema = {
   type: "object",
@@ -91,9 +100,14 @@ Higher-confidence lessons should carry more weight, but never override factual P
 ${lessons.join("\n\n")}`;
 }
 
-type GeneratedTitlesResult = { titles: GeneratedTitle[] };
+type GeneratedTitlesResult = {
+  titles: GeneratedTitle[];
+  includedMemoryIds: string[];
+};
 
-function isGeneratedTitlesResult(value: unknown): value is GeneratedTitlesResult {
+type ModelTitleResponse = { titles: GeneratedTitle[] };
+
+function isModelTitleResponse(value: unknown): value is ModelTitleResponse {
   if (!value || typeof value !== "object" || !("titles" in value)) return false;
   const titles = (value as { titles: unknown }).titles;
   return Array.isArray(titles) && titles.length === 5 && titles.every(
@@ -106,10 +120,27 @@ export async function generateTitles(
   relevantMemories: Lesson[] = [],
 ): Promise<GeneratedTitlesResult> {
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const memoryPrompt = formatRelevantMemories(relevantMemories);
+  const includedMemoryIds = memoryPrompt ? relevantMemories.map((memory) => memory.id) : [];
+  const hasIncludedMemories = includedMemoryIds.length > 0;
+  const finalMessages = [
+    {
+      role: "developer" as const,
+      content: `${SYSTEM_INSTRUCTION}\n\n${hasIncludedMemories ? MEMORY_CONSTRAINT_INSTRUCTION : NO_MEMORY_INSTRUCTION}`,
+    },
+    {
+      role: "user" as const,
+      content: [memoryPrompt, formatProductContext(productContext)].filter(Boolean).join("\n\n"),
+    },
+  ];
+
+  if (process.env.NODE_ENV !== "production") {
+    console.log("M6_DEBUG_FINAL_PROMPT", finalMessages);
+  }
+
   const response = await client.responses.create({
     model: AI_MODELS.generate,
-    instructions: `${SYSTEM_INSTRUCTION}\n\n${relevantMemories.length === 0 ? NO_MEMORY_INSTRUCTION : "Apply only the relevant team lessons supplied with this request. Their applicable DO and DON'T rules are required behavioral constraints for this title set, while factual Product Context remains authoritative."}`,
-    input: [formatRelevantMemories(relevantMemories), formatProductContext(productContext)].filter(Boolean).join("\n\n"),
+    input: finalMessages,
     text: {
       format: {
         type: "json_schema",
@@ -123,8 +154,8 @@ export async function generateTitles(
   console.log({
     stage: "generate",
     model: AI_MODELS.generate,
-    memoryCount: relevantMemories.length,
-    memoryIds: relevantMemories.map((memory) => memory.id),
+    memoryCount: includedMemoryIds.length,
+    memoryIds: includedMemoryIds,
     inputTokens: response.usage?.input_tokens,
     outputTokens: response.usage?.output_tokens,
   });
@@ -138,7 +169,7 @@ export async function generateTitles(
     throw new Error("The AI returned invalid JSON.");
   }
 
-  if (!isGeneratedTitlesResult(parsed)) throw new Error("The AI returned an invalid title structure.");
+  if (!isModelTitleResponse(parsed)) throw new Error("The AI returned an invalid title structure.");
 
   const uniqueTitles = new Set(parsed.titles.map((title) => title.text.trim().toLocaleLowerCase()));
   if (uniqueTitles.size !== 5) throw new Error("The AI returned duplicate titles.");
@@ -148,5 +179,6 @@ export async function generateTitles(
       id: `title-${index + 1}`,
       text: title.text.trim(),
     })),
+    includedMemoryIds,
   };
 }
